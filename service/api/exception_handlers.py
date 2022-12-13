@@ -2,6 +2,7 @@ from typing import Union
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from service.api.exceptions import UserNotFoundError, ModelNotFoundError
 from pydantic import ValidationError
 from starlette import status
 from starlette.exceptions import HTTPException
