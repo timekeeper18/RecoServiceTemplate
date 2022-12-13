@@ -66,4 +66,15 @@ venv.bak/
 # mypy
 .mypy_cache/
 
-
+#data
+/service/data/kion_train.zip
+/service/data/kion_train/
+/.venv/
+/.env
+/notebooks/kion.zip
+/notebooks/likes.zip
+/notebooks/Practice_2_1_Validation.ipynb
+/notebooks/Untitled.ipynb
+/notebooks/Untitled1.ipynb
+/notebooks/likes/
+/notebooks/data_original/
