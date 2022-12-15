@@ -1,49 +1,56 @@
-from typing import List
+import asyncio
+from concurrent.futures.thread import ThreadPoolExecutor
+from typing import Any, Dict
 
-from fastapi import APIRouter, FastAPI, Request
-from pydantic import BaseModel
+import pandas as pd
+import uvloop
+from fastapi import FastAPI
 
-from service.api.exceptions import UserNotFoundError
-from service.log import app_logger
+from .exception_handlers import add_exception_handlers
+from .middlewares import add_middlewares
+from .views import add_views
+from ..log import app_logger, setup_logging
+from ..make_reco import KionReco
+from ..settings import ServiceConfig
 
-
-class RecoResponse(BaseModel):
-    user_id: int
-    items: List[int]
-
-
-router = APIRouter()
-
-
-@router.get(
-    path="/health",
-    tags=["Health"],
-)
-async def health() -> str:
-    return "I am alive"
+__all__ = ("create_app",)
 
 
-@router.get(
-    path="/reco/{model_name}/{user_id}",
-    tags=["Recommendations"],
-    response_model=RecoResponse,
-)
-async def get_reco(
-    request: Request,
-    model_name: str,
-    user_id: int,
-) -> RecoResponse:
-    app_logger.info(f"Request for model: {model_name}, user_id: {user_id}")
+def setup_asyncio(thread_name_prefix: str) -> None:
+    uvloop.install()
 
-    # Write your code here
+    loop = asyncio.get_event_loop()
 
-    if user_id > 10**9:
-        raise UserNotFoundError(error_message=f"User {user_id} not found")
+    executor = ThreadPoolExecutor(thread_name_prefix=thread_name_prefix)
+    loop.set_default_executor(executor)
 
-    k_recs = request.app.state.k_recs
-    reco = list(range(k_recs))
-    return RecoResponse(user_id=user_id, items=reco)
+    def handler(_, context: Dict[str, Any]) -> None:
+        message = "Caught asyncio exception: {message}".format_map(context)
+        app_logger.warning(message)
+
+    loop.set_exception_handler(handler)
 
 
-def add_views(app: FastAPI) -> None:
-    app.include_router(router)
+def create_app(config: ServiceConfig) -> FastAPI:
+    setup_logging(config)
+    setup_asyncio(thread_name_prefix=config.service_name)
+    app = FastAPI(debug=False)
+    app.state.k_recs = config.k_recs
+    app.state.items_path = config.items_path
+    # Импортируем из конфига наименование модели
+    app.state.models = config.models
+    # поднимаем и подготавливаем данные
+    a = pd.read_csv(config.items_path)[["user_id", "item_id"]]
+    app.state.item_list = list(a["item_id"].unique())
+    app.state.items = a.groupby("user_id").agg(
+        {"item_id": lambda x: sorted(list(x))}).reset_index()
+
+    # инициализируем класс с рекомендациями
+    # app.state.lightfm_0077652 = KionReco(config.lightfm_path,
+    #                                      config.dataset_path)
+
+    add_views(app)
+    add_middlewares(app)
+    add_exception_handlers(app)
+
+    return app
